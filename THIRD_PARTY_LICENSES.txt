@@ -1,0 +1,86 @@
+THIRD_PARTY_LICENSES.txt
+========================
+
+Video Downloader v0.5.1 (und höher)
+Copyright 2026 by Lars Kuehn
+
+Dieses Programm nutzt folgende Open-Source-Komponenten:
+
+1. yt-dlp
+   ─────────────────────────────────────
+   License: Unlicense (Public Domain)
+   Repository: https://github.com/yt-dlp/yt-dlp
+
+   This is free and unencumbered software released into the public domain.
+
+   Anyone is free to copy, modify, publish, use, compile, sell, or
+   distribute this software, either in source code form or as a compiled
+   binary, for any purpose, commercial or non-commercial, and by any
+   means.
+
+   In jurisdictions that recognize copyright laws, the author or authors
+   of this software dedicate any and all copyright interest in the
+   software to the public domain. We make this dedication for the benefit
+   of the public at large and to the detriment of our heirs and
+   successors. We intend this dedication to be an overt act of
+   relinquishment in perpetuity of all present and future rights to this
+   software under copyright law.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+   OTHER DEALINGS IN THE SOFTWARE.
+
+   For more information, please refer to <http://unlicense.org>
+
+
+2. aria2
+   ─────────────────────────────────────
+   License: GNU General Public License v2.0 (GPLv2)
+   Repository: https://github.com/aria2/aria2
+
+   (Vollständiger Lizenztext siehe unten oder in der Originaldatei "COPYING")
+
+   GNU GENERAL PUBLIC LICENSE
+   Version 2, June 1991
+   Copyright (C) 1989, 1991 Free Software Foundation, Inc.
+   ...
+
+   Vollständiger Lizenztext: https://github.com/aria2/aria2/blob/master/COPYING
+
+
+3. FFmpeg
+   ─────────────────────────────────────
+   License: GNU Lesser General Public License (LGPL) v2.1 or later
+            (mit optionalen GPL-Komponenten)
+   Website: https://ffmpeg.org
+   Legal:   https://ffmpeg.org/legal.html
+
+   FFmpeg ist primär unter der LGPL v2.1 lizenziert.
+   Bestimmte optionale Teile (z. B. bestimmte Encoder/Optimierungen) fallen
+   unter die GPLv2. Falls diese genutzt werden, gilt die GPL für das gesamte
+   FFmpeg.
+
+   Vollständige Lizenztexte:
+   - LGPL v2.1: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+   - GPL v2:    https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+
+4. PyInstaller (nur Build-Tool)
+   ─────────────────────────────────────
+   License: GNU General Public License v2 with PyInstaller Exception
+   Repository: https://github.com/pyinstaller/pyinstaller
+
+   Die Exception erlaubt explizit das Erstellen und Verteilen von
+   gebündelten Executables (wie dieser .exe) ohne dass der gesamte Code
+   unter GPL fallen muss.
+
+
+Hinweis
+-------
+Das Herunterladen von urheberrechtlich geschützten Inhalten kann gegen die
+Nutzungsbedingungen der jeweiligen Plattform verstoßen. Bitte nutze dieses
+Tool nur für Inhalte, an denen du die entsprechenden Rechte besitzt.
