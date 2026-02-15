@@ -1,6 +1,8 @@
 #   - Video Downloader mit yt-dlp + aria2 + Tkinter
 #   - Copyright 2026 by Lars Kuehn
 #   - Version 0.5.1 (15.02.2026)
+#   - Licensed under the MIT License
+#   - https://github.com/deinusername/VideoDownloader  (später eintragen)
 #   - Einfache GUI für YouTube-Video/Playlist-Downloads
 #   - Unterstützt Einzelvideos und Playlists
 #   - Zeigt Fortschritt, Geschwindigkeit, ETA an
