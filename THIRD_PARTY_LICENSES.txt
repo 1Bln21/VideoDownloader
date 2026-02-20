@@ -1,7 +1,7 @@
 THIRD_PARTY_LICENSES.txt
 ========================
 
-Video Downloader v0.5.1 (und höher)
+Video Downloader v1.0.4 (und höher)
 Copyright 2026 by Lars Kuehn
 
 Dieses Programm nutzt folgende Open-Source-Komponenten:
@@ -83,4 +83,5 @@ Hinweis
 -------
 Das Herunterladen von urheberrechtlich geschützten Inhalten kann gegen die
 Nutzungsbedingungen der jeweiligen Plattform verstoßen. Bitte nutze dieses
+
 Tool nur für Inhalte, an denen du die entsprechenden Rechte besitzt.
