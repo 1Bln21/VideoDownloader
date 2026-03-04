@@ -2,11 +2,11 @@
 
 **Einfacher, schneller YouTube/Playlist-Downloader mit schöner GUI für Windows**
 
-Version 1.0.4 (20.02.2026)
+Version 1.0.5 (04.03.2026)
 
 ### Features
 - Lädt einzelne Videos und komplette Playlists
-- Nutzt **yt-dlp + aria2c** für maximale Geschwindigkeit (oft 60–90+ MB/s bei 1 Gbit)
+- Nutzt **yt-dlp + aria2c** für maximale Geschwindigkeit
 - Automatischer Merge zu sauberen MP4-Dateien mit FFmpeg
 - Schöne Fortschrittsanzeige mit Geschwindigkeit, ETA und Playlist-Status
 - Vollständig portable – alles (yt-dlp, aria2c, FFmpeg) wird mitinstalliert
