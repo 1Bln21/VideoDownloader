@@ -1,6 +1,6 @@
 #   - Video Downloader mit yt-dlp.exe + aria2 + Tkinter
 #   - Copyright 2026 by Lars Kuehn
-#   - Version 1.0.5 (20.02.2026)
+#   - Version 1.0.5 (04.03.2026)
 #   - Licensed under the MIT License
 #   - https://github.com/1Bln21/VideoDownloader
 #   - nutzt yt-dlp.exe aus .\bin\ (kein Python-Modul nötig)
@@ -350,3 +350,4 @@ tk.Button(root, text="Download starten", command=download_video).pack(pady=(0, 1
 
 root.protocol("WM_DELETE_WINDOW", close_app)
 root.mainloop()
+
