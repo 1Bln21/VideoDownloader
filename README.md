@@ -1,5 +1,15 @@
 # Video Downloader
 
+
+
+WIRD NICHT MEHR GEPFLEGT!
+
+Da ich auf CashyOS umgestiegen bin wird es keine weitere Arbeit an der Windowes Version geben.
+
+
+
+
+
 **Einfacher, schneller YouTube/Playlist-Downloader mit schöner GUI für Windows**
 
 Version 1.0.5 (04.03.2026)
