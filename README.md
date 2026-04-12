@@ -6,6 +6,8 @@ Version 1.1.2 (11.04.2026)
 
 ### Features
 - Lädt einzelne Videos und komplette Playlists
+- Warteschlange
+- Netzwerk/UNC Fähig
 - Nutzt **yt-dlp**
 - Automatischer Merge zu sauberen MP4-Dateien mit FFmpeg
 - Schöne Fortschrittsanzeige mit Geschwindigkeit, ETA und Playlist-Status
