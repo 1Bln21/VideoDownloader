@@ -14,7 +14,7 @@ Version 1.1.2 (11.04.2026)
 
 ### Installation
 1. Lade die neueste Version herunter: [Releases](../../releases)
-2. Führe `VideoDownloader-Setup.exe` aus
+2. Führe `VideoDownloader_Setup_1.1.2.exe` aus
 3. Fertig. Keine Python-Installation nötig.
 
 ### Danksagung / Third-Party Software
