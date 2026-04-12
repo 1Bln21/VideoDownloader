@@ -49,7 +49,7 @@ Nutze das Tool verantwortungsvoll und nur für Inhalte, an denen du die entsprec
 
 **Simple, fast YouTube/playlist downloader with a clean GUI for Windows**
 
-Version 1.1.2 (04-12-2026)
+Version 1.1.3 (04-12-2026)
 
 ### Features
 - Downloads single videos and complete playlists
