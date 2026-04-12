@@ -1,6 +1,6 @@
 #   - Video Downloader mit yt-dlp (Python-Modul) + Tkinter
 #   - Copyright 2026 by Lars Kuehn
-#   - Version 1.1.2-win (11.04.2026)
+#   - Version 1.1.3-win (12.04.2026)
 #   - Licensed under the MIT License
 #   - https://github.com/1Bln21/VideoDownloader
 #   - Zielplattform: Windows 11
@@ -17,11 +17,12 @@ import threading
 import os
 import shutil
 
+import re
 import yt_dlp
 
 
 APP_NAME      = "Video Downloader"
-APP_VERSION   = "1.1.2-win"
+APP_VERSION   = "1.1.3-win"
 APP_COPYRIGHT = "Copyright 2026 by Lars Kuehn"
 
 
@@ -135,6 +136,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "3. 'Cookie-Datei wählen…' und die .txt auswählen"
         ),
         "err_download_title":      "Fehler beim Download",
+        "err_format_unavailable":  (
+            "Das gewählte Format ist für dieses Video nicht verfügbar.\n\n"
+            "Bitte unter Einstellungen → Videoformat ein anderes Format wählen,\n"
+            "z.B. 'Beste Qualität (automatisch)'."
+        ),
+        "warn_no_download":        (
+            "Es wurde nichts heruntergeladen.\n\n"
+            "Mögliche Ursachen:\n"
+            "- Login erforderlich (Cookies setzen)\n"
+            "- Video ist privat oder nicht verfügbar\n"
+            "- Geo-Sperre aktiv\n"
+            "{0}"
+        ),
         # About
         "about_title":             "Über",
         "about_body":              (
@@ -273,6 +287,19 @@ STRINGS: dict[str, dict[str, str]] = {
             "3. Select 'Select cookie file…' and choose the .txt file"
         ),
         "err_download_title":      "Download error",
+        "err_format_unavailable":  (
+            "The selected format is not available for this video.\n\n"
+            "Please select a different format under Settings → Video format,\n"
+            "e.g. 'Best quality (auto)'."
+        ),
+        "warn_no_download":        (
+            "Nothing was downloaded.\n\n"
+            "Possible reasons:\n"
+            "- Login required (set cookies)\n"
+            "- Video is private or unavailable\n"
+            "- Geo-restriction active\n"
+            "{0}"
+        ),
         # About
         "about_title":             "About",
         "about_body":              (
@@ -324,7 +351,7 @@ def t(key: str, *args, **kwargs) -> str:
 FORMATS: list[dict] = [
     {
         "key":        "best_auto",
-        "fmt":        "bv*+ba/best",
+        "fmt":        "bv+ba/b/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Beste Qualität (automatisch)",
@@ -332,15 +359,23 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "best_mp4",
-        "fmt":        "bv*[ext=mp4]+ba[ext=m4a]/best[ext=mp4]/best",
+        "fmt":        "bv[ext=mp4]+ba[ext=m4a]/bv+ba/b/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Beste Qualität (MP4)",
         "en":         "Best quality (MP4)",
     },
     {
+        "key":        "8k",
+        "fmt":        "bv[height<=4320]+ba/b[height<=4320]/best",
+        "merge":      "mp4",
+        "audio_only": False,
+        "de":         "Maximal 8K (4320p)",
+        "en":         "Max. 8K (4320p)",
+    },
+    {
         "key":        "4k",
-        "fmt":        "bv*[height<=2160]+ba/best[height<=2160]",
+        "fmt":        "bv[height<=2160]+ba/b[height<=2160]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 4K (2160p)",
@@ -348,7 +383,7 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "1440p",
-        "fmt":        "bv*[height<=1440]+ba/best[height<=1440]",
+        "fmt":        "bv[height<=1440]+ba/b[height<=1440]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 1440p (2K)",
@@ -356,7 +391,7 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "1080p",
-        "fmt":        "bv*[height<=1080]+ba/best[height<=1080]",
+        "fmt":        "bv[height<=1080]+ba/b[height<=1080]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 1080p",
@@ -364,7 +399,7 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "720p",
-        "fmt":        "bv*[height<=720]+ba/best[height<=720]",
+        "fmt":        "bv[height<=720]+ba/b[height<=720]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 720p",
@@ -372,7 +407,7 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "480p",
-        "fmt":        "bv*[height<=480]+ba/best[height<=480]",
+        "fmt":        "bv[height<=480]+ba/b[height<=480]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 480p",
@@ -380,7 +415,7 @@ FORMATS: list[dict] = [
     },
     {
         "key":        "360p",
-        "fmt":        "bv*[height<=360]+ba/best[height<=360]",
+        "fmt":        "bv[height<=360]+ba/b[height<=360]/best",
         "merge":      "mp4",
         "audio_only": False,
         "de":         "Maximal 360p",
@@ -459,7 +494,59 @@ def find_ffmpeg() -> str | None:
 
 
 # ═══════════════════════════════════════════════════════════
-#  UNC / Netzwerkpfad-Hilfsfunktionen
+#  Playlist-Erkennung
+# ═══════════════════════════════════════════════════════════
+
+def _is_playlist_url(url: str) -> bool:
+    """
+    Erkennt Playlist-URLs anhand typischer Query-Parameter und Pfadmuster.
+    Wird genutzt um ignoreerrors nur bei Playlists zu aktivieren –
+    bei Einzelvideos sollen Fehler sichtbar sein statt still geschluckt zu werden.
+    """
+    import urllib.parse
+    try:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        # YouTube: ?list= oder /playlist
+        if "list" in params:
+            return True
+        if "playlist" in parsed.path.lower():
+            return True
+        # Allgemeine Playlist-Parameter anderer Plattformen
+        if any(k in params for k in ["playlist_id", "album_id", "set"]):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+# ═══════════════════════════════════════════════════════════
+#  yt-dlp Logger – fängt Fehlermeldungen für die UI auf
+# ═══════════════════════════════════════════════════════════
+
+class _YdlLogger:
+    """
+    Leitet yt-dlp Fehlermeldungen in eine Liste um.
+    So gehen keine Fehlerinfos verloren auch wenn quiet=True gesetzt ist.
+    ANSI-Escape-Codes (Terminal-Farben) werden herausgefiltert.
+    """
+    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+    def __init__(self):
+        self.errors: list[str] = []
+
+    @classmethod
+    def _clean(cls, msg: str) -> str:
+        return cls._ANSI_RE.sub('', msg).strip()
+
+    def debug(self, msg: str):
+        pass
+
+    def warning(self, msg: str):
+        pass
+
+    def error(self, msg: str):
+        self.errors.append(self._clean(msg))
 # ═══════════════════════════════════════════════════════════
 
 def is_unc_path(path: str) -> bool:
@@ -872,16 +959,20 @@ def download_queue():
                     item_var.set(ct)
                 root.after(0, _ui)
 
+            url_logger   = _YdlLogger()
+            url_playlist = _is_playlist_url(url)
+
             ydl_opts: dict = {
                 "format":            fmt_info["fmt"],
                 "outtmpl":           outtmpl,
                 "restrictfilenames": True,
                 "trim_file_name":    150,
-                "ignoreerrors":      True,
+                "ignoreerrors":      url_playlist,   # True nur bei Playlists
                 "retries":           10,
                 "fragment_retries":  10,
                 "quiet":             True,
                 "no_warnings":       True,
+                "logger":            url_logger,
                 "progress_hooks":    [progress_hook],
             }
             if fmt_info["merge"] == "mp3":
@@ -1073,15 +1164,26 @@ def download_video():
     def run_worker():
         global _download_running, _cancelled
 
+        # Playlist-URLs bekommen ignoreerrors=True damit einzelne
+        # nicht verfügbare Einträge den Rest nicht abbrechen.
+        # Einzelvideos bekommen False – Fehler sollen sichtbar sein.
+        is_playlist = _is_playlist_url(url)
+
+        logger = _YdlLogger()
+
         state = {
             "current_item":  0,
             "total_items":   0,
             "current_title": "",
+            "downloaded":    False,   # Wurde mindestens ein Download gestartet?
         }
 
         def progress_hook(d: dict):
             if _cancelled:
                 raise _CancelledError()
+
+            if d["status"] == "downloading":
+                state["downloaded"] = True
 
             if d["status"] != "downloading":
                 return
@@ -1123,11 +1225,12 @@ def download_video():
             "outtmpl":           outtmpl,
             "restrictfilenames": True,
             "trim_file_name":    150,
-            "ignoreerrors":      True,
+            "ignoreerrors":      is_playlist,   # True nur bei Playlists
             "retries":           10,
             "fragment_retries":  10,
             "quiet":             True,
             "no_warnings":       True,
+            "logger":            logger,        # Fehler auffangen statt verwerfen
             "progress_hooks":    [progress_hook],
         }
 
@@ -1157,9 +1260,11 @@ def download_video():
         except _CancelledError:
             was_cancelled = True
         except Exception as ex:
-            error_msg = str(ex)
+            error_msg = _YdlLogger._clean(str(ex))
 
-        total_items = state["total_items"]
+        total_items   = state["total_items"]
+        was_download  = state["downloaded"]
+        logged_errors = logger.errors
 
         def done_ui():
             global _download_running
@@ -1177,8 +1282,25 @@ def download_video():
                 set_status("status_error")
                 if "Could not copy" in error_msg and "cookie database" in error_msg:
                     messagebox.showerror(t("err_cookie_locked_title"), t("err_cookie_locked"))
+                elif "Requested format is not available" in error_msg or \
+                     "format is not available" in error_msg.lower():
+                    messagebox.showerror(t("err_download_title"), t("err_format_unavailable"))
                 else:
                     messagebox.showerror(t("err_download_title"), error_msg[-1500:])
+                return
+
+            # Kein Download gestartet, kein harter Fehler →
+            # Fehlerdetails aus dem Logger anzeigen (z.B. Login required, geo-block)
+            if not was_download:
+                progress_var.set(0)
+                set_status("status_error")
+                joined = "\n".join(logged_errors[-3:])
+                if "Requested format is not available" in joined or \
+                   "format is not available" in joined.lower():
+                    messagebox.showerror(t("err_download_title"), t("err_format_unavailable"))
+                else:
+                    detail = joined if joined else ""
+                    messagebox.showwarning(t("warn_title"), t("warn_no_download", detail))
                 return
 
             progress_var.set(100)
