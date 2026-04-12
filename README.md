@@ -1,25 +1,15 @@
 # Video Downloader
 
-
-
-WIRD NICHT MEHR GEPFLEGT!
-
-Da ich auf CashyOS umgestiegen bin wird es keine weitere Arbeit an der Windowes Version geben.
-
-
-
-
-
 **Einfacher, schneller YouTube/Playlist-Downloader mit schöner GUI für Windows**
 
-Version 1.0.5 (04.03.2026)
+Version 1.1.2 (11.04.2026)
 
 ### Features
 - Lädt einzelne Videos und komplette Playlists
-- Nutzt **yt-dlp + aria2c** für maximale Geschwindigkeit
+- Nutzt **yt-dlp**
 - Automatischer Merge zu sauberen MP4-Dateien mit FFmpeg
 - Schöne Fortschrittsanzeige mit Geschwindigkeit, ETA und Playlist-Status
-- Vollständig portable – alles (yt-dlp, aria2c, FFmpeg) wird mitinstalliert
+- Vollständig portable – alles (yt-dlp, FFmpeg) wird mitinstalliert
 - Windows/OneDrive-freundliche Dateinamen
 
 ### Installation
@@ -32,7 +22,6 @@ Dieses Programm nutzt folgende großartige Open-Source-Projekte:
 
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** – Unlicense + GPLv3 (in der EXE)
 - **[FFmpeg](https://ffmpeg.org)** – LGPL/GPL
-- **[aria2](https://aria2.github.io)** – GPLv2+
 - **[Python](https://www.python.org)** + Tkinter
 - **[PyInstaller](https://pyinstaller.org)**
 
