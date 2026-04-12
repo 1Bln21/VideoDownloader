@@ -25,7 +25,6 @@ Version 1.1.2 (11.04.2026)
 ### Installation
 1. Lade die neueste Version herunter: [Releases](../../releases)
 2. Führe `VideoDownloader_Setup_1.1.2.exe` aus
-3. Fertig. Keine Python-Installation nötig.
 
 ### Danksagung / Third-Party Software
 Dieses Programm nutzt folgende großartige Open-Source-Projekte:
@@ -64,7 +63,6 @@ Version 1.1.2 (04-11-2026)
 ### Installation
 1. Download the latest release: [Releases](../../releases)
 2. Run `VideoDownloader_Setup_1.1.2.exe`
-3. Done. No Python installation required.
 
 ### Credits / Third-Party Software
 This program makes use of the following great open-source projects:
