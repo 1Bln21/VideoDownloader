@@ -39,22 +39,7 @@ Dieses Programm nutzt folgende Open-Source-Komponenten:
    For more information, please refer to <http://unlicense.org>
 
 
-2. aria2
-   ─────────────────────────────────────
-   License: GNU General Public License v2.0 (GPLv2)
-   Repository: https://github.com/aria2/aria2
-
-   (Vollständiger Lizenztext siehe unten oder in der Originaldatei "COPYING")
-
-   GNU GENERAL PUBLIC LICENSE
-   Version 2, June 1991
-   Copyright (C) 1989, 1991 Free Software Foundation, Inc.
-   ...
-
-   Vollständiger Lizenztext: https://github.com/aria2/aria2/blob/master/COPYING
-
-
-3. FFmpeg
+2. FFmpeg
    ─────────────────────────────────────
    License: GNU Lesser General Public License (LGPL) v2.1 or later
             (mit optionalen GPL-Komponenten)
@@ -71,7 +56,7 @@ Dieses Programm nutzt folgende Open-Source-Komponenten:
    - GPL v2:    https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 
 
-4. PyInstaller (nur Build-Tool)
+3. PyInstaller (nur Build-Tool)
    ─────────────────────────────────────
    License: GNU General Public License v2 with PyInstaller Exception
    Repository: https://github.com/pyinstaller/pyinstaller
@@ -86,5 +71,3 @@ Hinweis
 Das Herunterladen von urheberrechtlich geschützten Inhalten kann gegen die
 Nutzungsbedingungen der jeweiligen Plattform verstoßen. Bitte nutze dieses
 Tool nur für Inhalte, an denen du die entsprechenden Rechte besitzt.
-
-
