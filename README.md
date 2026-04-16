@@ -10,7 +10,7 @@
 
 **Einfacher, schneller YouTube/Playlist-Downloader mit schöner GUI für Windows**
 
-Version 1.1.3 (12.04.2026)
+Version 1.2.0 (16.04.2026)
 
 ### Features
 - Lädt einzelne Videos und komplette Playlists
@@ -49,7 +49,7 @@ Nutze das Tool verantwortungsvoll und nur für Inhalte, an denen du die entsprec
 
 **Simple, fast YouTube/playlist downloader with a clean GUI for Windows**
 
-Version 1.1.3 (04-12-2026)
+Version 1.2.0 (04-16-2026)
 
 ### Features
 - Downloads single videos and complete playlists
