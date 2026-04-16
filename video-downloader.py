@@ -1,28 +1,46 @@
-#   - Video Downloader mit yt-dlp (Python-Modul) + Tkinter
+#   - Video Downloader mit yt-dlp.exe (Subprocess) + Tkinter
 #   - Copyright 2026 by Lars Kuehn
-#   - Version 1.1.3-win (12.04.2026)
+#   - Version 1.2.0-win (16.04.2026)
 #   - Licensed under the MIT License
 #   - https://github.com/1Bln21/VideoDownloader
-#   - Zielplattform: Windows 11
+#   - Zielplattform: Windows 10 / 11
+#
 #   - Voraussetzungen:
-#       pip install yt-dlp
-#       ffmpeg: https://ffmpeg.org/download.html
-#         oder: winget install --id=Gyan.FFmpeg -e
-#   - Tkinter ist in der Standardinstallation von Python für Windows enthalten.
+#       yt-dlp.exe  im App-Verzeichnis (wird vom Installer mitgeliefert)
+#       ffmpeg.exe  im App-Verzeichnis (wird vom Installer mitgeliefert)
+#       Python 3.11+ mit Tkinter (Standardinstallation Windows)
+#
+#   - Änderungshistorie:
+#       1.0.0  Erstveröffentlichung (Windows, yt-dlp + aria2 als EXE)
+#       1.1.0  Linux-Port (CachyOS/Arch), yt-dlp als Python-Modul
+#       1.1.1  SMB/Netzwerkfreigaben, Queue-Modus
+#       1.1.2  Windows-Port zurück, UNC-Pfade, Installer
+#       1.1.3  8K-Support, robustere Format-Strings, ignoreerrors smart,
+#              ANSI-Filter, Fehlererkennung verbessert
+#       1.1.4  Node.js JS-Runtime für YouTube n-Challenge (experimentell)
+#       1.2.0  KOMPLETTE NEUFASSUNG der Download-Engine:
+#              - yt-dlp.exe als Subprocess statt Python-Modul
+#              - EJS/Challenge-Solver bereits in yt-dlp.exe eingebaut
+#              - Kein Python-Paket-Versions-Chaos mehr
+#              - Fortschritt via stdout-Parsing (--progress --newline)
+#              - yt-dlp.exe wird vom Installer aus GitHub Releases gezogen
+#              - Automatischer Update-Check für yt-dlp.exe beim Start
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 import threading
+import subprocess
 import os
-import shutil
-
 import re
-import yt_dlp
+import shutil
+import urllib.parse
+import urllib.request
+import json
 
 
 APP_NAME      = "Video Downloader"
-APP_VERSION   = "1.1.3-win"
+APP_VERSION   = "1.2.0-win"
 APP_COPYRIGHT = "Copyright 2026 by Lars Kuehn"
 
 
@@ -72,9 +90,9 @@ STRINGS: dict[str, dict[str, str]] = {
         # Status
         "status_ready":            "Bereit.",
         "status_analyzing":        "Analysiere …",
-        "status_starting":         "Starte Download …",
         "status_downloading":      "Lade herunter …",
         "status_downloading_n":    "Download {0} von {1} …",
+        "status_merging":          "Zusammenführen …",
         "status_done":             "Fertig.",
         "status_done_n":           "Fertig. ({0} Videos)",
         "status_cancelled":        "Abgebrochen.",
@@ -101,14 +119,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "  \\\\Server\\Freigabe\\Unterordner"
         ),
         "err_no_ytdlp":            (
-            "yt-dlp ist nicht installiert.\n\n"
-            "pip install yt-dlp"
+            "yt-dlp.exe wurde nicht gefunden.\n\n"
+            "Erwartet in:\n{0}\n\n"
+            "Bitte den Installer erneut ausführen oder\n"
+            "yt-dlp.exe manuell von https://github.com/yt-dlp/yt-dlp/releases\n"
+            "in den App-Ordner kopieren."
         ),
         "warn_no_ffmpeg":          (
-            "ffmpeg wurde nicht gefunden.\n"
-            "Downloads können funktionieren, aber Merging/MP4-Ausgabe kann scheitern.\n\n"
-            "winget install --id=Gyan.FFmpeg -e\n"
-            "oder: https://ffmpeg.org/download.html"
+            "ffmpeg.exe wurde nicht gefunden.\n"
+            "Merging/MP4-Ausgabe kann scheitern.\n\n"
+            "ffmpeg.exe in den App-Ordner kopieren\n"
+            "oder: winget install --id=Gyan.FFmpeg -e"
         ),
         "err_no_cookie_file":      (
             "Es wurde 'Cookie-Datei' als Modus gewählt,\n"
@@ -180,6 +201,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "dlg_cookie_title":        "cookies.txt auswählen",
         "dlg_cookie_type":         "Netscape Cookie-Datei",
         "dlg_all_files":           "Alle Dateien",
+        # Updater
+        "menu_check_updates":      "Auf Updates prüfen…",
+        "upd_title":               "Update-Prüfung",
+        "upd_checking":            "Prüfe Versionen …",
+        "upd_current":             "Installiert",
+        "upd_latest":              "Verfügbar",
+        "upd_uptodate":            "✓ Aktuell",
+        "upd_available":           "↑ Update verfügbar",
+        "upd_unknown":             "?  Unbekannt",
+        "upd_not_found":           "Nicht installiert",
+        "upd_btn_update":          "Auswahl aktualisieren",
+        "upd_btn_close":           "Schließen",
+        "upd_downloading":         "Wird heruntergeladen …",
+        "upd_installing":          "Wird installiert …",
+        "upd_done":                "Update abgeschlossen.",
+        "upd_err_network":         "Netzwerkfehler – GitHub nicht erreichbar.",
+        "upd_err_download":        "Download fehlgeschlagen: {0}",
+        "upd_no_selection":        "Bitte mindestens eine Komponente auswählen.",
+        "upd_app_restart":         (
+            "Die App wurde aktualisiert.\n\n"
+            "Der Installer wird jetzt gestartet.\n"
+            "Die App wird danach automatisch neu gestartet."
+        ),
+        "upd_app_name":            "Video Downloader (App)",
     },
 
     "en": {
@@ -223,9 +268,9 @@ STRINGS: dict[str, dict[str, str]] = {
         # Status
         "status_ready":            "Ready.",
         "status_analyzing":        "Analyzing …",
-        "status_starting":         "Starting download …",
         "status_downloading":      "Downloading …",
         "status_downloading_n":    "Download {0} of {1} …",
+        "status_merging":          "Merging …",
         "status_done":             "Done.",
         "status_done_n":           "Done. ({0} videos)",
         "status_cancelled":        "Cancelled.",
@@ -252,14 +297,17 @@ STRINGS: dict[str, dict[str, str]] = {
             "  \\\\Server\\Share\\Subfolder"
         ),
         "err_no_ytdlp":            (
-            "yt-dlp is not installed.\n\n"
-            "pip install yt-dlp"
+            "yt-dlp.exe was not found.\n\n"
+            "Expected at:\n{0}\n\n"
+            "Please re-run the installer or\n"
+            "copy yt-dlp.exe manually from https://github.com/yt-dlp/yt-dlp/releases\n"
+            "into the app folder."
         ),
         "warn_no_ffmpeg":          (
-            "ffmpeg was not found.\n"
-            "Downloads may work, but merging/MP4 output may fail.\n\n"
-            "winget install --id=Gyan.FFmpeg -e\n"
-            "or: https://ffmpeg.org/download.html"
+            "ffmpeg.exe was not found.\n"
+            "Merging/MP4 output may fail.\n\n"
+            "Copy ffmpeg.exe into the app folder\n"
+            "or: winget install --id=Gyan.FFmpeg -e"
         ),
         "err_no_cookie_file":      (
             "Cookie file mode is selected,\n"
@@ -331,6 +379,30 @@ STRINGS: dict[str, dict[str, str]] = {
         "dlg_cookie_title":        "Select cookies.txt",
         "dlg_cookie_type":         "Netscape Cookie File",
         "dlg_all_files":           "All Files",
+        # Updater
+        "menu_check_updates":      "Check for updates…",
+        "upd_title":               "Update Check",
+        "upd_checking":            "Checking versions …",
+        "upd_current":             "Installed",
+        "upd_latest":              "Available",
+        "upd_uptodate":            "✓ Up to date",
+        "upd_available":           "↑ Update available",
+        "upd_unknown":             "?  Unknown",
+        "upd_not_found":           "Not installed",
+        "upd_btn_update":          "Update selection",
+        "upd_btn_close":           "Close",
+        "upd_downloading":         "Downloading …",
+        "upd_installing":          "Installing …",
+        "upd_done":                "Update complete.",
+        "upd_err_network":         "Network error – GitHub not reachable.",
+        "upd_err_download":        "Download failed: {0}",
+        "upd_no_selection":        "Please select at least one component.",
+        "upd_app_restart":         (
+            "The app has been updated.\n\n"
+            "The installer will now start.\n"
+            "The app will restart automatically afterwards."
+        ),
+        "upd_app_name":            "Video Downloader (App)",
     },
 }
 
@@ -463,21 +535,43 @@ ENCRYPTED_BROWSERS = {"chrome", "edge", "brave", "opera", "chromium", "vivaldi"}
 #  Tool-Erkennung
 # ═══════════════════════════════════════════════════════════
 
+def _app_dir() -> str:
+    """Gibt das Verzeichnis der laufenden EXE / des Scripts zurück."""
+    if getattr(__import__("sys"), "frozen", False):
+        return os.path.dirname(__import__("sys").executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def find_ytdlp() -> str | None:
+    """
+    Sucht yt-dlp.exe zuerst im App-Verzeichnis (vom Installer platziert),
+    dann im PATH als Fallback.
+    """
+    # App-Verzeichnis hat Vorrang – dort legt der Installer yt-dlp.exe ab
+    local = os.path.join(_app_dir(), "yt-dlp.exe")
+    if os.path.isfile(local):
+        return local
+    # PATH-Fallback für Entwickler-Umgebungen
+    return shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+
+
 def find_ffmpeg() -> str | None:
     """
-    Sucht ffmpeg im PATH und in typischen Windows-Installationsorten.
-    winget installiert nach %LOCALAPPDATA%\\Programs\\ffmpeg\\bin,
-    manuelle Installationen oft nach %ProgramFiles%\\ffmpeg\\bin.
+    Sucht ffmpeg.exe zuerst im App-Verzeichnis,
+    dann in typischen Windows-Installationsorten und PATH.
     """
+    local = os.path.join(_app_dir(), "ffmpeg.exe")
+    if os.path.isfile(local):
+        return local
+
     found = shutil.which("ffmpeg")
     if found:
         return found
 
     extra_dirs = []
-    local_app = os.environ.get("LOCALAPPDATA", "")
-    prog_files = os.environ.get("ProgramFiles", "")
+    local_app      = os.environ.get("LOCALAPPDATA", "")
+    prog_files     = os.environ.get("ProgramFiles", "")
     prog_files_x86 = os.environ.get("ProgramFiles(x86)", "")
-
     if local_app:
         extra_dirs.append(os.path.join(local_app, "Programs", "ffmpeg", "bin"))
     if prog_files:
@@ -494,25 +588,372 @@ def find_ffmpeg() -> str | None:
 
 
 # ═══════════════════════════════════════════════════════════
-#  Playlist-Erkennung
+#  Versions-Erkennung & Updater
+# ═══════════════════════════════════════════════════════════
+
+def _get_local_ytdlp_version() -> str:
+    """Ermittelt die lokale yt-dlp.exe Version via --version."""
+    exe = find_ytdlp()
+    if not exe:
+        return ""
+    try:
+        result = subprocess.run(
+            [exe, "--version"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _get_local_ffmpeg_version() -> str:
+    """Ermittelt die lokale ffmpeg.exe Version."""
+    exe = find_ffmpeg()
+    if not exe:
+        return ""
+    try:
+        result = subprocess.run(
+            [exe, "-version"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        # Erste Zeile: "ffmpeg version N.N.N ..."
+        first = result.stdout.splitlines()[0] if result.stdout else ""
+        m = re.search(r'version\s+([\S]+)', first)
+        return m.group(1) if m else first[:30]
+    except Exception:
+        return ""
+
+
+def _fetch_github_release(repo: str) -> dict | None:
+    """
+    Ruft die neueste GitHub-Release-Info ab.
+    repo z.B. 'yt-dlp/yt-dlp' oder 'GyanD/codexffmpeg'
+    """
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "VideoDownloader-Updater"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _find_asset_url(release: dict, name: str) -> str:
+    """Sucht in den Release-Assets nach einer Datei mit dem angegebenen Namen."""
+    for asset in release.get("assets", []):
+        if asset.get("name", "") == name:
+            return asset.get("browser_download_url", "")
+    return ""
+
+
+def _download_to_file(url: str, dest: str) -> bool:
+    """Lädt eine Datei herunter — einfacher urllib-Download."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "VideoDownloader-Updater"})
+        with urllib.request.urlopen(req, timeout=120) as resp, \
+             open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+        return True
+    except Exception:
+        return False
+
+
+def show_updater():
+    """
+    Öffnet den Update-Dialog.
+    Prüft yt-dlp.exe und ffmpeg.exe gegen GitHub Releases
+    und ermöglicht das manuelle Aktualisieren einzelner Komponenten.
+    """
+    dialog = tk.Toplevel(root)
+    dialog.title(t("upd_title"))
+    dialog.resizable(False, False)
+    dialog.grab_set()
+
+    padx, pady = 14, 6
+
+    # ── Status-Label ──────────────────────────────────────
+    status_lbl = tk.Label(dialog, text=t("upd_checking"), anchor="w", fg="gray")
+    status_lbl.pack(fill="x", padx=padx, pady=(pady * 2, pady))
+
+    # ── Tabelle ───────────────────────────────────────────
+    table = tk.Frame(dialog)
+    table.pack(fill="x", padx=padx, pady=pady)
+
+    headers = ["", "Komponente", t("upd_current"), t("upd_latest"), "Status"]
+    col_widths = [3, 14, 18, 18, 18]
+    for col, (h, w) in enumerate(zip(headers, col_widths)):
+        tk.Label(table, text=h, font=(None, 9, "bold"), width=w, anchor="w").grid(
+            row=0, column=col, padx=2, pady=2, sticky="w")
+
+    # Checkboxen und Zeilendaten
+    ytdlp_var  = tk.BooleanVar(value=False)
+    ffmpeg_var = tk.BooleanVar(value=False)
+    app_var    = tk.BooleanVar(value=False)
+
+    rows = {
+        "app":    {"name": t("upd_app_name"), "var": app_var,    "row": 1},
+        "ytdlp":  {"name": "yt-dlp.exe",      "var": ytdlp_var,  "row": 2},
+        "ffmpeg": {"name": "ffmpeg.exe",       "var": ffmpeg_var, "row": 3},
+    }
+
+    labels = {}
+    for key, info in rows.items():
+        chk = tk.Checkbutton(table, variable=info["var"])
+        chk.grid(row=info["row"], column=0, padx=2, pady=3, sticky="w")
+        tk.Label(table, text=info["name"], width=col_widths[1], anchor="w").grid(
+            row=info["row"], column=1, padx=2, pady=3, sticky="w")
+        lbl_cur = tk.Label(table, text="…", width=col_widths[2], anchor="w", fg="gray")
+        lbl_cur.grid(row=info["row"], column=2, padx=2, pady=3, sticky="w")
+        lbl_lat = tk.Label(table, text="…", width=col_widths[3], anchor="w", fg="gray")
+        lbl_lat.grid(row=info["row"], column=3, padx=2, pady=3, sticky="w")
+        lbl_sts = tk.Label(table, text="…", width=col_widths[4], anchor="w", fg="gray")
+        lbl_sts.grid(row=info["row"], column=4, padx=2, pady=3, sticky="w")
+        labels[key] = {"cur": lbl_cur, "lat": lbl_lat, "sts": lbl_sts, "chk": chk}
+
+    ttk.Separator(dialog, orient="horizontal").pack(fill="x", padx=padx, pady=pady)
+
+    # ── Fortschrittsbalken ────────────────────────────────
+    upd_progress = ttk.Progressbar(dialog, mode="indeterminate")
+    upd_progress.pack(fill="x", padx=padx, pady=(0, pady))
+
+    # ── Buttons ───────────────────────────────────────────
+    btn_frame  = tk.Frame(dialog)
+    btn_frame.pack(pady=(0, pady * 2))
+    btn_update = tk.Button(btn_frame, text=t("upd_btn_update"),
+                           state="disabled", width=20)
+    btn_update.pack(side="left", padx=4)
+    tk.Button(btn_frame, text=t("upd_btn_close"),
+              command=dialog.destroy, width=10).pack(side="left", padx=4)
+
+    # ── Versions-Daten (werden im Thread befüllt) ─────────
+    version_data = {}
+
+    def _check_worker():
+        """Läuft im Thread — fragt lokale Versionen und GitHub API ab."""
+        # Lokale Versionen
+        local_ytdlp  = _get_local_ytdlp_version()
+        local_ffmpeg = _get_local_ffmpeg_version()
+        local_app    = APP_VERSION.replace("-win", "")
+
+        # GitHub Releases
+        rel_ytdlp  = _fetch_github_release("yt-dlp/yt-dlp")
+        rel_ffmpeg = _fetch_github_release("GyanD/codexffmpeg")
+        rel_app    = _fetch_github_release("1Bln21/VideoDownloader")
+
+        latest_ytdlp  = rel_ytdlp.get("tag_name", "").lstrip("v")  if rel_ytdlp  else ""
+        latest_ffmpeg = rel_ffmpeg.get("tag_name", "").lstrip("v") if rel_ffmpeg else ""
+        latest_app    = rel_app.get("tag_name", "").lstrip("v")    if rel_app    else ""
+
+        url_ytdlp  = _find_asset_url(rel_ytdlp,  "yt-dlp.exe") if rel_ytdlp  else ""
+
+        # ffmpeg: essentials-ZIP suchen
+        url_ffmpeg = ""
+        if rel_ffmpeg:
+            for asset in rel_ffmpeg.get("assets", []):
+                name = asset.get("name", "")
+                if "essentials_build" in name and name.endswith(".zip"):
+                    url_ffmpeg = asset.get("browser_download_url", "")
+                    break
+
+        # App-Installer suchen — Name: VideoDownloader_Setup_X.Y.Z.exe
+        url_app = ""
+        if rel_app:
+            for asset in rel_app.get("assets", []):
+                name = asset.get("name", "")
+                if name.startswith("VideoDownloader_Setup") and name.endswith(".exe"):
+                    url_app = asset.get("browser_download_url", "")
+                    break
+
+        version_data["ytdlp"]  = {
+            "local":  local_ytdlp  or t("upd_not_found"),
+            "latest": latest_ytdlp or t("upd_unknown"),
+            "url":    url_ytdlp,
+            "type":   "exe",
+        }
+        version_data["ffmpeg"] = {
+            "local":  local_ffmpeg or t("upd_not_found"),
+            "latest": latest_ffmpeg or t("upd_unknown"),
+            "url":    url_ffmpeg,
+            "type":   "zip_ffmpeg",
+        }
+        version_data["app"] = {
+            "local":  local_app,
+            "latest": latest_app or t("upd_unknown"),
+            "url":    url_app,
+            "type":   "installer",
+        }
+
+        def _update_ui():
+            upd_progress.stop()
+            upd_progress.configure(mode="determinate", value=0)
+
+            any_update = False
+            for key, data in version_data.items():
+                lbl = labels[key]
+                lbl["cur"].config(text=data["local"][:17],  fg="black")
+                lbl["lat"].config(text=data["latest"][:17], fg="black")
+
+                if not data["url"]:
+                    lbl["sts"].config(text=t("upd_unknown"), fg="gray")
+                    lbl["chk"].config(state="disabled")
+                elif data["local"] == t("upd_not_found"):
+                    lbl["sts"].config(text=t("upd_not_found"), fg="orange")
+                    any_update = True
+                elif data["local"].split()[0] == data["latest"].split()[0]:
+                    lbl["sts"].config(text=t("upd_uptodate"), fg="green")
+                    lbl["chk"].config(state="disabled")
+                else:
+                    lbl["sts"].config(text=t("upd_available"), fg="blue")
+                    any_update = True
+
+            if any_update:
+                btn_update.config(state="normal")
+                status_lbl.config(text="", fg="gray")
+            else:
+                status_lbl.config(text=t("upd_uptodate"), fg="green")
+
+        dialog.after(0, _update_ui)
+
+    def _do_update():
+        """Startet den eigentlichen Download der ausgewählten Komponenten."""
+        selected = {k: v for k, v in version_data.items()
+                    if rows[k]["var"].get() and v.get("url")}
+        if not selected:
+            messagebox.showwarning(t("warn_title"), t("upd_no_selection"), parent=dialog)
+            return
+
+        btn_update.config(state="disabled")
+        upd_progress.configure(mode="indeterminate")
+        upd_progress.start(10)
+
+        def _worker():
+            import tempfile, zipfile
+            errors      = []
+            do_restart  = False
+
+            for key, data in selected.items():
+                url      = data["url"]
+                typ      = data.get("type", "exe")
+                name     = rows[key]["name"]
+                dialog.after(0, lambda n=name: status_lbl.config(
+                    text=f"{t('upd_downloading')} {n}", fg="gray"))
+                try:
+                    suffix = ".zip" if typ in ("zip_ffmpeg",) else ".exe"
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                        tmp_path = tmp.name
+
+                    if not _download_to_file(url, tmp_path):
+                        errors.append(name)
+                        continue
+
+                    dialog.after(0, lambda n=name: status_lbl.config(
+                        text=f"{t('upd_installing')} {n}", fg="gray"))
+
+                    dest_dir = _app_dir()
+
+                    if typ == "installer":
+                        # App-Update: Installer silent starten, App beendet sich danach
+                        do_restart = True
+                        installer_path = os.path.join(
+                            os.environ.get("TEMP", dest_dir),
+                            "VideoDownloader_Update.exe"
+                        )
+                        shutil.copy2(tmp_path, installer_path)
+
+                    elif typ == "exe":
+                        dest = os.path.join(dest_dir, "yt-dlp.exe")
+                        old  = dest + ".old"
+                        try:
+                            os.replace(dest, old)
+                        except Exception:
+                            pass
+                        try:
+                            shutil.copy2(tmp_path, dest)
+                            if os.path.exists(old):
+                                os.remove(old)
+                        except Exception as ex:
+                            errors.append(f"yt-dlp.exe: {ex}")
+
+                    elif typ == "zip_ffmpeg":
+                        try:
+                            with zipfile.ZipFile(tmp_path, "r") as zf:
+                                for member in zf.namelist():
+                                    base = os.path.basename(member)
+                                    if base in ("ffmpeg.exe", "ffprobe.exe"):
+                                        with zf.open(member) as src, \
+                                             open(os.path.join(dest_dir, base), "wb") as dst:
+                                            shutil.copyfileobj(src, dst)
+                        except Exception as ex:
+                            errors.append(f"ffmpeg.exe: {ex}")
+
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+
+                except Exception as ex:
+                    errors.append(f"{name}: {ex}")
+
+            def _done():
+                upd_progress.stop()
+                upd_progress.configure(mode="determinate", value=100)
+
+                if do_restart and not errors:
+                    # Installer starten und App beenden
+                    messagebox.showinfo(t("upd_title"), t("upd_app_restart"),
+                                        parent=dialog)
+                    installer = os.path.join(
+                        os.environ.get("TEMP", _app_dir()),
+                        "VideoDownloader_Update.exe"
+                    )
+                    try:
+                        subprocess.Popen(
+                            [installer,
+                             "/SILENT", "/SUPPRESSMSGBOXES",
+                             "/NORESTART", "/SP-"],
+                            creationflags=subprocess.DETACHED_PROCESS |
+                                          subprocess.CREATE_NEW_PROCESS_GROUP,
+                        )
+                    except Exception:
+                        pass
+                    close_app()
+                    return
+
+                if errors:
+                    status_lbl.config(
+                        text=t("upd_err_download", ", ".join(errors)), fg="red")
+                else:
+                    status_lbl.config(text=t("upd_done"), fg="green")
+
+                btn_update.config(state="normal")
+                threading.Thread(target=_check_worker, daemon=True).start()
+
+            dialog.after(0, _done)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    btn_update.config(command=_do_update)
+
+    # Prüfung starten
+    upd_progress.start(10)
+    threading.Thread(target=_check_worker, daemon=True).start()
 # ═══════════════════════════════════════════════════════════
 
 def _is_playlist_url(url: str) -> bool:
-    """
-    Erkennt Playlist-URLs anhand typischer Query-Parameter und Pfadmuster.
-    Wird genutzt um ignoreerrors nur bei Playlists zu aktivieren –
-    bei Einzelvideos sollen Fehler sichtbar sein statt still geschluckt zu werden.
-    """
-    import urllib.parse
+    """Erkennt Playlist-URLs anhand typischer Query-Parameter."""
     try:
         parsed = urllib.parse.urlparse(url)
         params = urllib.parse.parse_qs(parsed.query)
-        # YouTube: ?list= oder /playlist
         if "list" in params:
             return True
         if "playlist" in parsed.path.lower():
             return True
-        # Allgemeine Playlist-Parameter anderer Plattformen
         if any(k in params for k in ["playlist_id", "album_id", "set"]):
             return True
     except Exception:
@@ -521,41 +962,24 @@ def _is_playlist_url(url: str) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-#  yt-dlp Logger – fängt Fehlermeldungen für die UI auf
+#  ANSI-Cleaner
 # ═══════════════════════════════════════════════════════════
 
-class _YdlLogger:
-    """
-    Leitet yt-dlp Fehlermeldungen in eine Liste um.
-    So gehen keine Fehlerinfos verloren auch wenn quiet=True gesetzt ist.
-    ANSI-Escape-Codes (Terminal-Farben) werden herausgefiltert.
-    """
-    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
-    def __init__(self):
-        self.errors: list[str] = []
+def _clean(msg: str) -> str:
+    return _ANSI_RE.sub('', msg).strip()
 
-    @classmethod
-    def _clean(cls, msg: str) -> str:
-        return cls._ANSI_RE.sub('', msg).strip()
 
-    def debug(self, msg: str):
-        pass
-
-    def warning(self, msg: str):
-        pass
-
-    def error(self, msg: str):
-        self.errors.append(self._clean(msg))
+# ═══════════════════════════════════════════════════════════
+#  UNC / Netzwerkpfad-Hilfsfunktionen
 # ═══════════════════════════════════════════════════════════
 
 def is_unc_path(path: str) -> bool:
-    """Gibt True zurück wenn der Pfad ein UNC-Pfad ist (\\\\server\\share)."""
     return path.strip().startswith("\\\\") or path.strip().startswith("//")
 
 
 def normalize_unc(path: str) -> str:
-    """Normalisiert UNC-Pfade: // → \\\\ und Slashes → Backslashes."""
     p = path.strip()
     if p.startswith("//"):
         p = "\\\\" + p[2:].replace("/", "\\")
@@ -563,11 +987,6 @@ def normalize_unc(path: str) -> str:
 
 
 def validate_unc_path(path: str) -> tuple[str, str | None]:
-    """
-    Prüft ob ein UNC-Pfad syntaktisch gültig ist und ob er erreichbar ist.
-    Gibt (normalisierter_pfad, fehlermeldung) zurück.
-    Gibt (pfad, None) zurück wenn OK.
-    """
     p = normalize_unc(path)
     parts = p.lstrip("\\").split("\\", 2)
     server = parts[0] if len(parts) > 0 else ""
@@ -580,17 +999,10 @@ def validate_unc_path(path: str) -> tuple[str, str | None]:
 
 
 def effective_download_path(raw: str) -> tuple[str, str | None]:
-    """
-    Gibt (effektiver_pfad, fehlermeldung) zurück.
-    UNC-Pfade werden normalisiert und validiert.
-    Lokale Pfade werden direkt durchgereicht.
-    """
     if not raw:
         return "", t("err_no_folder")
-
     if is_unc_path(raw):
         return validate_unc_path(raw)
-
     return raw, None
 
 
@@ -599,71 +1011,43 @@ def effective_download_path(raw: str) -> tuple[str, str | None]:
 # ═══════════════════════════════════════════════════════════
 
 def build_menus():
-    """Baut die gesamte Menüleiste neu auf (bei Sprachänderung)."""
     menubar.delete(0, tk.END)
 
-    # ── Datei / File ──────────────────────────────────────
     file_menu = tk.Menu(menubar, tearoff=0)
     file_menu.add_command(label=t("menu_close"), command=close_app)
     menubar.add_cascade(label=t("menu_file"), menu=file_menu)
 
-    # ── Browser / Cookies ─────────────────────────────────
     browser_menu = tk.Menu(menubar, tearoff=0)
     browser_menu.add_command(label=t("menu_cookie_select"), command=select_cookie_file)
     browser_menu.add_command(label=t("menu_cookie_help"),   command=show_cookie_help)
     browser_menu.add_separator()
-    browser_menu.add_radiobutton(
-        label=t("menu_no_browser"),
-        variable=browser_var,
-        value=NO_BROWSER,
-    )
+    browser_menu.add_radiobutton(label=t("menu_no_browser"), variable=browser_var, value=NO_BROWSER)
     browser_menu.add_separator()
     for key, display_name in SUPPORTED_BROWSERS:
-        browser_menu.add_radiobutton(
-            label=display_name,
-            variable=browser_var,
-            value=key,
-        )
+        browser_menu.add_radiobutton(label=display_name, variable=browser_var, value=key)
     menubar.add_cascade(label=t("menu_browser"), menu=browser_menu)
 
-    # ── Einstellungen / Settings ───────────────────────────
     settings_menu = tk.Menu(menubar, tearoff=0)
-
     lang_menu = tk.Menu(settings_menu, tearoff=0)
-    lang_menu.add_radiobutton(
-        label=t("menu_lang_de"),
-        variable=lang_var,
-        value="de",
-        command=apply_language,
-    )
-    lang_menu.add_radiobutton(
-        label=t("menu_lang_en"),
-        variable=lang_var,
-        value="en",
-        command=apply_language,
-    )
+    lang_menu.add_radiobutton(label=t("menu_lang_de"), variable=lang_var, value="de", command=apply_language)
+    lang_menu.add_radiobutton(label=t("menu_lang_en"), variable=lang_var, value="en", command=apply_language)
     settings_menu.add_cascade(label=t("menu_language"), menu=lang_menu)
 
     fmt_menu = tk.Menu(settings_menu, tearoff=0)
     lang = lang_var.get()
     for fmt in FORMATS:
-        fmt_menu.add_radiobutton(
-            label=fmt[lang],
-            variable=format_var,
-            value=fmt["key"],
-        )
+        fmt_menu.add_radiobutton(label=fmt[lang], variable=format_var, value=fmt["key"])
     settings_menu.add_cascade(label=t("menu_format"), menu=fmt_menu)
-
     menubar.add_cascade(label=t("menu_settings"), menu=settings_menu)
 
-    # ── Hilfe / Help ──────────────────────────────────────
     help_menu = tk.Menu(menubar, tearoff=0)
+    help_menu.add_command(label=t("menu_check_updates"), command=show_updater)
+    help_menu.add_separator()
     help_menu.add_command(label=t("menu_about"), command=show_about)
     menubar.add_cascade(label=t("menu_help"), menu=help_menu)
 
 
 def apply_language(*_):
-    """Aktualisiert alle UI-Texte nach Sprachwechsel."""
     root.title(f"{APP_NAME} v{APP_VERSION} – {APP_COPYRIGHT}")
     build_menus()
     lbl_url.config(text=t("lbl_url"))
@@ -695,6 +1079,7 @@ current_status_args: tuple = ()
 _download_running:   bool  = False
 _cancelled:          bool  = False
 _url_queue:          list  = []
+_current_process:    None  = None   # Läuft als subprocess.Popen
 
 
 def set_status(key: str, *args):
@@ -709,36 +1094,22 @@ def set_status(key: str, *args):
 # ═══════════════════════════════════════════════════════════
 
 def select_folder():
-    """Lokalen Ordner wählen – startet im aktuellen Pfad wenn sinnvoll."""
     initial = download_path_var.get().strip()
-    if initial and os.path.isdir(initial):
-        start = initial
-    else:
-        start = os.path.expanduser("~")
+    start = initial if (initial and os.path.isdir(initial)) else os.path.expanduser("~")
     folder = filedialog.askdirectory(initialdir=start)
     if folder:
         download_path_var.set(folder)
 
 
 def select_unc_path():
-    """
-    UNC-Dialog: erlaubt manuelle Eingabe eines Netzwerkpfades.
-    Unter Windows sind UNC-Pfade direkt als Pfade nutzbar –
-    Windows kümmert sich selbst um Mounting/Credentials.
-    """
     dialog = tk.Toplevel(root)
     dialog.title(t("smb_dialog_title"))
     dialog.resizable(False, False)
     dialog.grab_set()
-
     padx, pady = 12, 6
-
-    tk.Label(dialog, text=t("smb_dialog_label"),
-             justify="left").pack(anchor="w", padx=padx, pady=(pady * 2, pady))
-
+    tk.Label(dialog, text=t("smb_dialog_label"), justify="left").pack(anchor="w", padx=padx, pady=(pady * 2, pady))
     current = download_path_var.get().strip()
-    initial = current if is_unc_path(current) else "\\\\"
-    entry_var = tk.StringVar(value=initial)
+    entry_var = tk.StringVar(value=current if is_unc_path(current) else "\\\\")
     entry = tk.Entry(dialog, textvariable=entry_var, width=50)
     entry.pack(padx=padx, pady=pady)
     entry.select_range(0, tk.END)
@@ -748,28 +1119,20 @@ def select_unc_path():
         raw = entry_var.get().strip()
         if not raw:
             return
-        if is_unc_path(raw):
-            normalized = normalize_unc(raw)
-            download_path_var.set(normalized)
-        else:
-            download_path_var.set(raw)
+        download_path_var.set(normalize_unc(raw) if is_unc_path(raw) else raw)
         dialog.destroy()
 
     btn_frame = tk.Frame(dialog)
     btn_frame.pack(pady=(pady, pady * 2))
     tk.Button(btn_frame, text="✓ OK",        command=use_manual).pack(side="left", padx=4)
     tk.Button(btn_frame, text="✗ Abbrechen", command=dialog.destroy).pack(side="left", padx=4)
-
     entry.bind("<Return>", lambda _: use_manual())
 
 
 def select_cookie_file():
     path = filedialog.askopenfilename(
         title=t("dlg_cookie_title"),
-        filetypes=[
-            (t("dlg_cookie_type"), "*.txt"),
-            (t("dlg_all_files"),   "*.*"),
-        ],
+        filetypes=[(t("dlg_cookie_type"), "*.txt"), (t("dlg_all_files"), "*.*")],
     )
     if path:
         cookie_file_var.set(path)
@@ -794,15 +1157,18 @@ def show_cookie_help():
 
 
 def show_about():
-    messagebox.showinfo(
-        t("about_title"),
-        t("about_body", name=APP_NAME, ver=APP_VERSION, copy=APP_COPYRIGHT),
-    )
+    messagebox.showinfo(t("about_title"),
+        t("about_body", name=APP_NAME, ver=APP_VERSION, copy=APP_COPYRIGHT))
 
 
 def cancel_download():
-    global _cancelled
+    global _cancelled, _current_process
     _cancelled = True
+    if _current_process and _current_process.poll() is None:
+        try:
+            _current_process.terminate()
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════
@@ -810,12 +1176,10 @@ def cancel_download():
 # ═══════════════════════════════════════════════════════════
 
 def toggle_queue_mode():
-    """Schaltet zwischen Einzellink- und Queue-Modus um."""
     if queue_mode_var.get():
         queue_mode_var.set(False)
         queue_frame.pack_forget()
         btn_toggle_queue.config(text=t("btn_queue_mode_off"))
-        lbl_url.config(text=t("lbl_url"))
         btn_download.config(text=t("btn_download"), command=download_video)
     else:
         queue_mode_var.set(True)
@@ -824,7 +1188,6 @@ def toggle_queue_mode():
         btn_queue_add.config(text=t("btn_queue_add"))
         btn_queue_remove.config(text=t("btn_queue_remove"))
         btn_queue_clear.config(text=t("btn_queue_clear"))
-        lbl_url.config(text=t("lbl_url"))
         btn_download.config(text=t("btn_queue_download"), command=download_queue)
         _refresh_queue_label()
     root.update_idletasks()
@@ -837,11 +1200,9 @@ def _refresh_queue_label():
 def queue_add_url():
     url = url_var.get().strip()
     if not url:
-        messagebox.showerror(t("err_title"), t("err_no_url"))
-        return
+        messagebox.showerror(t("err_title"), t("err_no_url")); return
     if not url.startswith("http"):
-        messagebox.showerror(t("err_title"), t("err_invalid_url"))
-        return
+        messagebox.showerror(t("err_title"), t("err_invalid_url")); return
     _url_queue.append(url)
     queue_listbox.insert(tk.END, url)
     url_var.set("")
@@ -865,167 +1226,14 @@ def queue_clear():
     _refresh_queue_label()
 
 
-def download_queue():
-    """Startet den sequenziellen Download aller URLs in der Queue."""
-    global _download_running, _cancelled
-
-    if not _url_queue:
-        messagebox.showerror(t("err_title"), t("err_queue_empty"))
-        return
-
-    download_path_raw = download_path_var.get().strip()
-    download_path, path_err = effective_download_path(download_path_raw)
-    if path_err:
-        messagebox.showerror(t("err_title"), path_err)
-        return
-
-    try:
-        import yt_dlp as _check  # noqa: F401
-    except ImportError:
-        messagebox.showerror(t("err_title"), t("err_no_ytdlp"))
-        return
-
-    ffmpeg_path      = find_ffmpeg()
-    selected_browser = browser_var.get()
-    cookie_file      = cookie_file_var.get().strip()
-
-    if selected_browser == COOKIE_FILE_MODE:
-        if not cookie_file or not os.path.isfile(cookie_file):
-            messagebox.showerror(t("err_title"), t("err_no_cookie_file"))
-            return
-
-    if selected_browser in ENCRYPTED_BROWSERS:
-        display_clean = next(
-            (n.replace("   ⚠", "") for k, n in SUPPORTED_BROWSERS if k == selected_browser),
-            selected_browser,
-        )
-        if not messagebox.askokcancel(t("warn_encrypted_title"),
-                                      t("warn_encrypted", display_clean)):
-            return
-
-    fmt_info = next((f for f in FORMATS if f["key"] == format_var.get()), FORMATS[0])
-    urls     = list(_url_queue)
-    total    = len(urls)
-
-    _cancelled        = False
-    _download_running = True
-    progress_var.set(0)
-    progress_bar.configure(mode="determinate", maximum=100)
-    set_status("status_analyzing")
-    item_var.set("")
-    btn_download.config(text=t("btn_cancel"), command=cancel_download)
-    root.update_idletasks()
-
-    outtmpl = os.path.join(download_path, "%(title).150B [%(id)s].%(ext)s")
-
-    def run_queue_worker():
-        global _download_running, _cancelled
-
-        done_count  = 0
-        error_count = 0
-
-        for i, url in enumerate(urls, start=1):
-            if _cancelled:
-                break
-
-            def _highlight(idx=i - 1):
-                queue_listbox.selection_clear(0, tk.END)
-                queue_listbox.selection_set(idx)
-                queue_listbox.see(idx)
-                set_status("status_queue_n", i, total)
-                progress_var.set(0)
-                item_var.set("")
-            root.after(0, _highlight)
-
-            state = {"current_title": ""}
-
-            def progress_hook(d: dict, _i=i, _total=total):
-                if _cancelled:
-                    raise _CancelledError()
-                if d["status"] != "downloading":
-                    return
-                info  = d.get("info_dict", {})
-                title = info.get("title", "")
-                if title:
-                    state["current_title"] = title[:80]
-                total_b = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
-                dl_b    = d.get("downloaded_bytes", 0)
-                pct     = int(dl_b / total_b * 100) if total_b > 0 else 0
-                pct     = min(pct, 99)
-                ct      = state["current_title"]
-
-                def _ui(p=pct, ct=ct):
-                    progress_var.set(p)
-                    item_var.set(ct)
-                root.after(0, _ui)
-
-            url_logger   = _YdlLogger()
-            url_playlist = _is_playlist_url(url)
-
-            ydl_opts: dict = {
-                "format":            fmt_info["fmt"],
-                "outtmpl":           outtmpl,
-                "restrictfilenames": True,
-                "trim_file_name":    150,
-                "ignoreerrors":      url_playlist,   # True nur bei Playlists
-                "retries":           10,
-                "fragment_retries":  10,
-                "quiet":             True,
-                "no_warnings":       True,
-                "logger":            url_logger,
-                "progress_hooks":    [progress_hook],
-            }
-            if fmt_info["merge"] == "mp3":
-                ydl_opts["postprocessors"] = [{
-                    "key":              "FFmpegExtractAudio",
-                    "preferredcodec":   "mp3",
-                    "preferredquality": "0",
-                }]
-            else:
-                ydl_opts["merge_output_format"] = fmt_info["merge"]
-            if ffmpeg_path:
-                ydl_opts["ffmpeg_location"] = os.path.dirname(ffmpeg_path)
-            if selected_browser == COOKIE_FILE_MODE:
-                ydl_opts["cookiefile"] = cookie_file
-            elif selected_browser:
-                ydl_opts["cookiesfrombrowser"] = (selected_browser,)
-
-            was_error = False
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
-                done_count += 1
-            except _CancelledError:
-                _cancelled = True
-                break
-            except Exception:
-                error_count += 1
-                was_error = True
-
-            def _mark_done(idx=i - 1, ok=not was_error):
-                queue_listbox.itemconfig(idx, fg="gray" if ok else "red")
-            root.after(0, _mark_done)
-
-        def done_ui():
-            global _download_running
-            _download_running = False
-            btn_download.config(text=t("btn_queue_download"), command=download_queue)
-            queue_listbox.selection_clear(0, tk.END)
-            item_var.set("")
-            if _cancelled:
-                progress_var.set(0)
-                set_status("status_cancelled")
-            else:
-                progress_var.set(100)
-                set_status("status_queue_done", done_count, total)
-        root.after(0, done_ui)
-
-    threading.Thread(target=run_queue_worker, daemon=True).start()
-
-
 def close_app():
     global _cancelled
     _cancelled = True
+    if _current_process and _current_process.poll() is None:
+        try:
+            _current_process.terminate()
+        except Exception:
+            pass
     root.quit()
     root.destroy()
 
@@ -1050,15 +1258,12 @@ def safe_paste(entry: tk.Entry):
 
 
 def add_context_menu_to_entry(entry: tk.Entry):
-    """Kontextmenü mit Lazy-Label-Update beim Öffnen (automatisch mehrsprachig)."""
     menu = tk.Menu(entry, tearoff=0)
     menu.add_command(command=lambda: entry.event_generate("<<Cut>>"))
     menu.add_command(command=lambda: entry.event_generate("<<Copy>>"))
     menu.add_command(command=lambda: safe_paste(entry))
     menu.add_separator()
-    menu.add_command(command=lambda: (
-        entry.selection_range(0, tk.END), entry.icursor(tk.END)
-    ))
+    menu.add_command(command=lambda: (entry.selection_range(0, tk.END), entry.icursor(tk.END)))
 
     def popup(event):
         menu.entryconfigure(0, label=t("ctx_cut"))
@@ -1075,28 +1280,291 @@ def add_context_menu_to_entry(entry: tk.Entry):
 
 
 def add_shift_insert_paste(entry: tk.Entry):
-    def _handler(_e):
-        safe_paste(entry)
-        return "break"
-    entry.bind("<Shift-Insert>", _handler)
+    entry.bind("<Shift-Insert>", lambda _e: (safe_paste(entry), "break")[1])
 
 
 def add_ctrl_v_safe_paste(entry: tk.Entry):
-    def _handler(_e):
+    def _h(_e):
         safe_paste(entry)
         return "break"
-    entry.bind("<Control-v>", _handler)
-    entry.bind("<Control-V>", _handler)
+    entry.bind("<Control-v>", _h)
+    entry.bind("<Control-V>", _h)
 
 
 # ═══════════════════════════════════════════════════════════
-#  Download (yt-dlp Python API)
+#  Download-Engine: yt-dlp.exe als Subprocess
 # ═══════════════════════════════════════════════════════════
 
-class _CancelledError(Exception):
-    """Wird im Progress-Hook geworfen, um den laufenden Download abzubrechen."""
-    pass
+# Fortschritts-Parser für yt-dlp --newline Output:
+# [download]  42.3% of  123.45MiB at  3.21MiB/s ETA 00:30
+_PROGRESS_RE = re.compile(
+    r'\[download\]\s+([\d.]+)%'           # Prozent
+    r'(?:\s+of\s+[\d.]+\s*\S+)?'         # Größe optional
+    r'(?:\s+at\s+([\d.]+\s*\S+/s))?'     # Geschwindigkeit optional
+    r'(?:\s+ETA\s+(\S+))?',              # ETA optional
+    re.IGNORECASE
+)
+# Playlist-Fortschritt: [download] Downloading item 3 of 10
+_PLAYLIST_RE = re.compile(
+    r'\[download\]\s+Downloading\s+item\s+(\d+)\s+of\s+(\d+)',
+    re.IGNORECASE
+)
+# Merge-Zeile
+_MERGE_RE = re.compile(r'\[Merger\]|\[ffmpeg\]', re.IGNORECASE)
 
+
+def _build_ytdlp_cmd(
+    url:              str,
+    download_path:    str,
+    fmt_info:         dict,
+    ffmpeg_path:      str | None,
+    selected_browser: str,
+    cookie_file:      str,
+    is_playlist:      bool,
+) -> list[str]:
+    """Baut die yt-dlp.exe Kommandozeile zusammen."""
+    ytdlp = find_ytdlp()
+    cmd = [ytdlp]
+
+    # Format
+    cmd += ["-f", fmt_info["fmt"]]
+
+    # Ausgabe-Template
+    outtmpl = os.path.join(download_path, "%(title).150B [%(id)s].%(ext)s")
+    cmd += ["-o", outtmpl]
+
+    # Merge-Format
+    if fmt_info["merge"] == "mp3":
+        cmd += ["--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"]
+    else:
+        cmd += ["--merge-output-format", fmt_info["merge"]]
+
+    # ffmpeg-Pfad
+    if ffmpeg_path:
+        cmd += ["--ffmpeg-location", os.path.dirname(ffmpeg_path)]
+
+    # Playlist-Fehlerbehandlung
+    if is_playlist:
+        cmd.append("--ignore-errors")
+
+    # Fortschritt für stdout-Parsing
+    cmd += ["--progress", "--newline", "--no-warnings"]
+
+    # Dateinamen-Bereinigung
+    cmd += ["--restrict-filenames", "--trim-filenames", "150"]
+
+    # Retries
+    cmd += ["--retries", "10", "--fragment-retries", "10"]
+
+    # Cookies
+    if selected_browser == COOKIE_FILE_MODE:
+        cmd += ["--cookies", cookie_file]
+    elif selected_browser:
+        cmd += ["--cookies-from-browser", selected_browser]
+
+    cmd.append(url)
+    return cmd
+
+
+def _run_download(
+    urls:             list[str],
+    download_path:    str,
+    fmt_info:         dict,
+    ffmpeg_path:      str | None,
+    selected_browser: str,
+    cookie_file:      str,
+    queue_mode:       bool,
+):
+    """
+    Führt den Download durch — läuft im Worker-Thread.
+    Parst stdout von yt-dlp.exe und schiebt UI-Updates via root.after().
+    """
+    global _download_running, _cancelled, _current_process
+
+    total      = len(urls)
+    done_count = 0
+
+    for i, url in enumerate(urls, start=1):
+        if _cancelled:
+            break
+
+        is_playlist = _is_playlist_url(url)
+
+        # Queue-Listbox aktualisieren
+        if queue_mode:
+            def _highlight(idx=i - 1):
+                queue_listbox.selection_clear(0, tk.END)
+                queue_listbox.selection_set(idx)
+                queue_listbox.see(idx)
+                set_status("status_queue_n", i, total)
+                progress_var.set(0)
+                item_var.set("")
+            root.after(0, _highlight)
+        else:
+            root.after(0, lambda: set_status("status_analyzing"))
+
+        cmd = _build_ytdlp_cmd(
+            url, download_path, fmt_info,
+            ffmpeg_path, selected_browser, cookie_file, is_playlist
+        )
+
+        error_lines   = []
+        was_download  = False
+        was_cancelled = False
+        pl_current    = 0
+        pl_total      = 0
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            _current_process = proc
+
+            for line in proc.stdout:
+                if _cancelled:
+                    proc.terminate()
+                    was_cancelled = True
+                    break
+
+                line = _clean(line)
+
+                # Playlist-Fortschritt
+                pm = _PLAYLIST_RE.search(line)
+                if pm:
+                    pl_current = int(pm.group(1))
+                    pl_total   = int(pm.group(2))
+                    def _pl_ui(c=pl_current, tot=pl_total):
+                        set_status("status_downloading_n", c, tot)
+                        progress_var.set(0)
+                    root.after(0, _pl_ui)
+                    continue
+
+                # Download-Fortschritt
+                dm = _PROGRESS_RE.search(line)
+                if dm:
+                    pct   = float(dm.group(1))
+                    speed = dm.group(2) or ""
+                    was_download = True
+                    def _dl_ui(p=pct, s=speed):
+                        progress_var.set(min(p, 99))
+                        if not queue_mode or pl_total <= 1:
+                            set_status("status_downloading")
+                        item_var.set(s)
+                    root.after(0, _dl_ui)
+                    continue
+
+                # Merge-Phase
+                if _MERGE_RE.search(line):
+                    root.after(0, lambda: set_status("status_merging"))
+                    continue
+
+                # Fehler sammeln
+                if line.lower().startswith("error"):
+                    error_lines.append(line)
+
+            proc.wait()
+            if proc.returncode == 0:
+                done_count += 1
+
+        except Exception as ex:
+            error_lines.append(str(ex))
+
+        finally:
+            _current_process = None
+
+        # Queue-Eintrag markieren
+        if queue_mode:
+            ok = (proc.returncode == 0) if not was_cancelled else False
+            def _mark(idx=i - 1, success=ok):
+                queue_listbox.itemconfig(idx, fg="gray" if success else "red")
+            root.after(0, _mark)
+
+        if was_cancelled:
+            break
+
+        # Fehlerauswertung für Einzelvideo
+        if not queue_mode:
+            _handle_single_result(error_lines, was_download)
+            return
+
+    # ── Abschluss ──────────────────────────────────────────
+    def done_ui():
+        global _download_running
+        _download_running = False
+        if queue_mode:
+            btn_download.config(text=t("btn_queue_download"), command=download_queue)
+            queue_listbox.selection_clear(0, tk.END)
+        else:
+            btn_download.config(text=t("btn_download"), command=download_video)
+        item_var.set("")
+
+        if _cancelled:
+            progress_var.set(0)
+            set_status("status_cancelled")
+            return
+
+        progress_var.set(100)
+        if queue_mode:
+            set_status("status_queue_done", done_count, total)
+        elif total > 1:
+            set_status("status_done_n", total)
+        else:
+            set_status("status_done")
+
+    root.after(0, done_ui)
+
+
+def _handle_single_result(error_lines: list[str], was_download: bool):
+    """Wertet das Ergebnis eines Einzelvideo-Downloads aus und zeigt ggf. Fehler."""
+    joined = "\n".join(error_lines)
+
+    def ui():
+        global _download_running
+        _download_running = False
+        btn_download.config(text=t("btn_download"), command=download_video)
+        item_var.set("")
+
+        if _cancelled:
+            progress_var.set(0)
+            set_status("status_cancelled")
+            return
+
+        if not was_download and error_lines:
+            progress_var.set(0)
+            set_status("status_error")
+            if "Requested format is not available" in joined or \
+               "format is not available" in joined.lower():
+                messagebox.showerror(t("err_download_title"), t("err_format_unavailable"))
+            elif "Could not copy" in joined and "cookie database" in joined:
+                messagebox.showerror(t("err_cookie_locked_title"), t("err_cookie_locked"))
+            elif "Sign in" in joined or "bot" in joined.lower():
+                messagebox.showwarning(t("warn_title"),
+                    t("warn_no_download", "\n" + joined[-800:]))
+            else:
+                messagebox.showerror(t("err_download_title"), joined[-1500:])
+            return
+
+        if not was_download:
+            progress_var.set(0)
+            set_status("status_error")
+            messagebox.showwarning(t("warn_title"), t("warn_no_download", ""))
+            return
+
+        progress_var.set(100)
+        set_status("status_done")
+
+    root.after(0, ui)
+
+
+# ═══════════════════════════════════════════════════════════
+#  Download starten (Einzelvideo)
+# ═══════════════════════════════════════════════════════════
 
 def download_video():
     global _download_running, _cancelled
@@ -1105,25 +1573,20 @@ def download_video():
     download_path = download_path_var.get().strip()
 
     if not url:
-        messagebox.showerror(t("err_title"), t("err_no_url"))
-        return
+        messagebox.showerror(t("err_title"), t("err_no_url")); return
     if not url.startswith("http"):
-        messagebox.showerror(t("err_title"), t("err_invalid_url"))
-        return
+        messagebox.showerror(t("err_title"), t("err_invalid_url")); return
     if not download_path:
-        messagebox.showerror(t("err_title"), t("err_no_folder"))
-        return
+        messagebox.showerror(t("err_title"), t("err_no_folder")); return
 
     download_path, path_err = effective_download_path(download_path)
     if path_err:
-        messagebox.showerror(t("err_title"), path_err)
-        return
+        messagebox.showerror(t("err_title"), path_err); return
 
-    try:
-        import yt_dlp as _check  # noqa: F401
-    except ImportError:
-        messagebox.showerror(t("err_title"), t("err_no_ytdlp"))
-        return
+    ytdlp_path = find_ytdlp()
+    if not ytdlp_path:
+        messagebox.showerror(t("err_title"),
+            t("err_no_ytdlp", os.path.join(_app_dir(), "yt-dlp.exe"))); return
 
     ffmpeg_path = find_ffmpeg()
     if not ffmpeg_path:
@@ -1134,18 +1597,14 @@ def download_video():
 
     if selected_browser == COOKIE_FILE_MODE:
         if not cookie_file or not os.path.isfile(cookie_file):
-            messagebox.showerror(t("err_title"), t("err_no_cookie_file"))
-            return
+            messagebox.showerror(t("err_title"), t("err_no_cookie_file")); return
 
     if selected_browser in ENCRYPTED_BROWSERS:
         display_clean = next(
             (n.replace("   ⚠", "") for k, n in SUPPORTED_BROWSERS if k == selected_browser),
-            selected_browser,
-        )
-        if not messagebox.askokcancel(
-            t("warn_encrypted_title"),
-            t("warn_encrypted", display_clean),
-        ):
+            selected_browser)
+        if not messagebox.askokcancel(t("warn_encrypted_title"),
+                                      t("warn_encrypted", display_clean)):
             return
 
     fmt_info = next((f for f in FORMATS if f["key"] == format_var.get()), FORMATS[0])
@@ -1159,159 +1618,68 @@ def download_video():
     btn_download.config(text=t("btn_cancel"), command=cancel_download)
     root.update_idletasks()
 
-    outtmpl = os.path.join(download_path, "%(title).150B [%(id)s].%(ext)s")
+    threading.Thread(
+        target=_run_download,
+        args=([url], download_path, fmt_info, ffmpeg_path,
+              selected_browser, cookie_file, False),
+        daemon=True,
+    ).start()
 
-    def run_worker():
-        global _download_running, _cancelled
 
-        # Playlist-URLs bekommen ignoreerrors=True damit einzelne
-        # nicht verfügbare Einträge den Rest nicht abbrechen.
-        # Einzelvideos bekommen False – Fehler sollen sichtbar sein.
-        is_playlist = _is_playlist_url(url)
+# ═══════════════════════════════════════════════════════════
+#  Download starten (Queue)
+# ═══════════════════════════════════════════════════════════
 
-        logger = _YdlLogger()
+def download_queue():
+    global _download_running, _cancelled
 
-        state = {
-            "current_item":  0,
-            "total_items":   0,
-            "current_title": "",
-            "downloaded":    False,   # Wurde mindestens ein Download gestartet?
-        }
+    if not _url_queue:
+        messagebox.showerror(t("err_title"), t("err_queue_empty")); return
 
-        def progress_hook(d: dict):
-            if _cancelled:
-                raise _CancelledError()
+    download_path_raw = download_path_var.get().strip()
+    download_path, path_err = effective_download_path(download_path_raw)
+    if path_err:
+        messagebox.showerror(t("err_title"), path_err); return
 
-            if d["status"] == "downloading":
-                state["downloaded"] = True
+    ytdlp_path = find_ytdlp()
+    if not ytdlp_path:
+        messagebox.showerror(t("err_title"),
+            t("err_no_ytdlp", os.path.join(_app_dir(), "yt-dlp.exe"))); return
 
-            if d["status"] != "downloading":
-                return
+    ffmpeg_path      = find_ffmpeg()
+    selected_browser = browser_var.get()
+    cookie_file      = cookie_file_var.get().strip()
 
-            info = d.get("info_dict", {})
+    if selected_browser == COOKIE_FILE_MODE:
+        if not cookie_file or not os.path.isfile(cookie_file):
+            messagebox.showerror(t("err_title"), t("err_no_cookie_file")); return
 
-            idx = info.get("playlist_index") or info.get("playlist_autonumber")
-            n   = info.get("n_entries")
-            if idx:
-                state["current_item"] = int(idx)
-            if n:
-                state["total_items"] = int(n)
+    if selected_browser in ENCRYPTED_BROWSERS:
+        display_clean = next(
+            (n.replace("   ⚠", "") for k, n in SUPPORTED_BROWSERS if k == selected_browser),
+            selected_browser)
+        if not messagebox.askokcancel(t("warn_encrypted_title"),
+                                      t("warn_encrypted", display_clean)):
+            return
 
-            title = info.get("title", "")
-            if title:
-                state["current_title"] = title[:80]
+    fmt_info = next((f for f in FORMATS if f["key"] == format_var.get()), FORMATS[0])
+    urls     = list(_url_queue)
 
-            total      = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
-            downloaded = d.get("downloaded_bytes", 0)
-            pct = int(downloaded / total * 100) if total > 0 else 0
-            pct = min(pct, 99)
+    _cancelled        = False
+    _download_running = True
+    progress_var.set(0)
+    progress_bar.configure(mode="determinate", maximum=100)
+    set_status("status_analyzing")
+    item_var.set("")
+    btn_download.config(text=t("btn_cancel"), command=cancel_download)
+    root.update_idletasks()
 
-            ci = state["current_item"]
-            ti = state["total_items"]
-            ct = state["current_title"]
-
-            def _ui_update(p=pct, ci=ci, ti=ti, ct=ct):
-                progress_var.set(p)
-                if ti > 1:
-                    set_status("status_downloading_n", ci, ti)
-                else:
-                    set_status("status_downloading")
-                item_var.set(ct)
-
-            root.after(0, _ui_update)
-
-        ydl_opts: dict = {
-            "format":            fmt_info["fmt"],
-            "outtmpl":           outtmpl,
-            "restrictfilenames": True,
-            "trim_file_name":    150,
-            "ignoreerrors":      is_playlist,   # True nur bei Playlists
-            "retries":           10,
-            "fragment_retries":  10,
-            "quiet":             True,
-            "no_warnings":       True,
-            "logger":            logger,        # Fehler auffangen statt verwerfen
-            "progress_hooks":    [progress_hook],
-        }
-
-        if fmt_info["merge"] == "mp3":
-            ydl_opts["postprocessors"] = [{
-                "key":              "FFmpegExtractAudio",
-                "preferredcodec":   "mp3",
-                "preferredquality": "0",
-            }]
-        else:
-            ydl_opts["merge_output_format"] = fmt_info["merge"]
-
-        if ffmpeg_path:
-            ydl_opts["ffmpeg_location"] = os.path.dirname(ffmpeg_path)
-
-        if selected_browser == COOKIE_FILE_MODE:
-            ydl_opts["cookiefile"] = cookie_file
-        elif selected_browser:
-            ydl_opts["cookiesfrombrowser"] = (selected_browser,)
-
-        error_msg     = ""
-        was_cancelled = False
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        except _CancelledError:
-            was_cancelled = True
-        except Exception as ex:
-            error_msg = _YdlLogger._clean(str(ex))
-
-        total_items   = state["total_items"]
-        was_download  = state["downloaded"]
-        logged_errors = logger.errors
-
-        def done_ui():
-            global _download_running
-            _download_running = False
-            btn_download.config(text=t("btn_download"), command=download_video)
-            item_var.set("")
-
-            if was_cancelled:
-                progress_var.set(0)
-                set_status("status_cancelled")
-                return
-
-            if error_msg:
-                progress_var.set(0)
-                set_status("status_error")
-                if "Could not copy" in error_msg and "cookie database" in error_msg:
-                    messagebox.showerror(t("err_cookie_locked_title"), t("err_cookie_locked"))
-                elif "Requested format is not available" in error_msg or \
-                     "format is not available" in error_msg.lower():
-                    messagebox.showerror(t("err_download_title"), t("err_format_unavailable"))
-                else:
-                    messagebox.showerror(t("err_download_title"), error_msg[-1500:])
-                return
-
-            # Kein Download gestartet, kein harter Fehler →
-            # Fehlerdetails aus dem Logger anzeigen (z.B. Login required, geo-block)
-            if not was_download:
-                progress_var.set(0)
-                set_status("status_error")
-                joined = "\n".join(logged_errors[-3:])
-                if "Requested format is not available" in joined or \
-                   "format is not available" in joined.lower():
-                    messagebox.showerror(t("err_download_title"), t("err_format_unavailable"))
-                else:
-                    detail = joined if joined else ""
-                    messagebox.showwarning(t("warn_title"), t("warn_no_download", detail))
-                return
-
-            progress_var.set(100)
-            if total_items > 1:
-                set_status("status_done_n", total_items)
-            else:
-                set_status("status_done")
-
-        root.after(0, done_ui)
-
-    threading.Thread(target=run_worker, daemon=True).start()
+    threading.Thread(
+        target=_run_download,
+        args=(urls, download_path, fmt_info, ffmpeg_path,
+              selected_browser, cookie_file, True),
+        daemon=True,
+    ).start()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1347,29 +1715,23 @@ lbl_url.pack(pady=(10, 0))
 
 _url_row = tk.Frame(root)
 _url_row.pack(fill="x", padx=padx, pady=5)
-
 url_entry = tk.Entry(_url_row, textvariable=url_var, width=70)
 url_entry.pack(side="left", fill="x", expand=True)
-
 btn_toggle_queue = tk.Button(_url_row, text="", command=toggle_queue_mode)
 btn_toggle_queue.pack(side="left", padx=(6, 0))
 
-# Queue-Modus: Listbox + Buttons (anfangs versteckt)
+# Queue-Panel (anfangs versteckt)
 queue_frame = tk.Frame(root)
-
 lbl_queue_count = tk.Label(queue_frame, text="", anchor="w")
 lbl_queue_count.pack(fill="x")
-
 _qlist_frame = tk.Frame(queue_frame, bd=1, relief="sunken")
 _qlist_frame.pack(fill="x", pady=(2, 4))
-
 queue_listbox = tk.Listbox(_qlist_frame, height=6, width=80,
                            selectmode=tk.SINGLE, activestyle="underline")
 queue_listbox.pack(side="left", fill="both", expand=True)
 _qsb = tk.Scrollbar(_qlist_frame, orient="vertical", command=queue_listbox.yview)
 _qsb.pack(side="right", fill="y")
 queue_listbox.config(yscrollcommand=_qsb.set)
-
 _qbtn_frame = tk.Frame(queue_frame)
 _qbtn_frame.pack(anchor="w")
 btn_queue_add    = tk.Button(_qbtn_frame, text="", command=queue_add_url)
@@ -1378,16 +1740,13 @@ btn_queue_clear  = tk.Button(_qbtn_frame, text="", command=queue_clear)
 btn_queue_add.pack(side="left", padx=(0, 4))
 btn_queue_remove.pack(side="left", padx=(0, 4))
 btn_queue_clear.pack(side="left")
-
 url_entry.bind("<Return>", lambda _: queue_add_url() if queue_mode_var.get() else None)
 
 # Ordner-Zeile
 lbl_folder = tk.Label(root, text="")
 lbl_folder.pack(pady=(10, 0))
-
 path_entry = tk.Entry(root, textvariable=download_path_var, width=80)
 path_entry.pack(padx=padx, pady=5)
-
 _btn_frame = tk.Frame(root)
 _btn_frame.pack()
 btn_folder = tk.Button(_btn_frame, text="", command=select_folder)
@@ -1416,11 +1775,11 @@ progress_bar.pack(fill="x", padx=padx, pady=(0, 10))
 btn_download = tk.Button(root, text="", command=download_video)
 btn_download.pack(pady=(0, 15))
 
-# ── Traces für Browser-Info ────────────────────────────────
+# ── Traces ────────────────────────────────────────────────
 browser_var.trace_add("write",     update_browser_info)
 cookie_file_var.trace_add("write", update_browser_info)
 
-# ── Initialzustand setzen ─────────────────────────────────
+# ── Initialzustand ────────────────────────────────────────
 apply_language()
 
 root.protocol("WM_DELETE_WINDOW", close_app)
