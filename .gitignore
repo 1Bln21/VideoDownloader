@@ -1,0 +1,14 @@
+# ─── Build-Artefakte ────────────────────────────────────────
+/dist/
+/build/
+/dist_installer/
+
+# ─── Python ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.spec
+
+# ─── Mitgelieferte Binaries (nicht versionieren) ────────────
+# bin/ bleibt getrackt fuer README.txt und appicon.ico,
+# aber die grossen EXEs werden ignoriert.
+/bin/*.exe
