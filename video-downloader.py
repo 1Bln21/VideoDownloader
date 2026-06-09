@@ -1,6 +1,6 @@
 #   - Video Downloader mit yt-dlp.exe (Subprocess) + Tkinter
 #   - Copyright 2026 by Lars Kuehn
-#   - Version 1.2.0-win (16.04.2026)
+#   - Version 1.2.1-win (09.06.2026)
 #   - Licensed under the MIT License
 #   - https://github.com/1Bln21/VideoDownloader
 #   - Zielplattform: Windows 10 / 11
@@ -25,6 +25,11 @@
 #              - Fortschritt via stdout-Parsing (--progress --newline)
 #              - yt-dlp.exe wird vom Installer aus GitHub Releases gezogen
 #              - Automatischer Update-Check für yt-dlp.exe beim Start
+#       1.2.1  Updater-Fixes:
+#              - ffmpeg-Versionsvergleich normalisiert (kein dauerhaftes
+#                "Update verfügbar" mehr bei GyanD-Build-Suffixen)
+#              - Updates kopieren mit EINER UAC-Abfrage (Start-Process RunAs);
+#                App muss nicht mehr als Administrator gestartet werden
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -40,7 +45,7 @@ import json
 
 
 APP_NAME      = "Video Downloader"
-APP_VERSION   = "1.2.0-win"
+APP_VERSION   = "1.2.1-win"
 APP_COPYRIGHT = "Copyright 2026 by Lars Kuehn"
 
 
@@ -217,6 +222,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "upd_installing":          "Wird installiert …",
         "upd_done":                "Update abgeschlossen.",
         "upd_err_network":         "Netzwerkfehler – GitHub nicht erreichbar.",
+        "upd_err_admin":           "Adminrechte verweigert oder Kopieren fehlgeschlagen.",
         "upd_err_download":        "Download fehlgeschlagen: {0}",
         "upd_no_selection":        "Bitte mindestens eine Komponente auswählen.",
         "upd_app_restart":         (
@@ -395,6 +401,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "upd_installing":          "Installing …",
         "upd_done":                "Update complete.",
         "upd_err_network":         "Network error – GitHub not reachable.",
+        "upd_err_admin":           "Admin rights denied or copy failed.",
         "upd_err_download":        "Download failed: {0}",
         "upd_no_selection":        "Please select at least one component.",
         "upd_app_restart":         (
@@ -664,6 +671,87 @@ def _download_to_file(url: str, dest: str) -> bool:
         return False
 
 
+def _normalize_version(ver: str) -> str:
+    """
+    Normalisiert Versionstrings für den Vergleich.
+    Entfernt Build-Suffixe wie '-essentials_build', '-full_build', '-lgpl' etc.
+    '7.1.1-full_build-www.gyan.dev' → '7.1.1'
+    '2026.03.17' bleibt '2026.03.17'
+    """
+    return ver.strip().split("-", 1)[0].split()[0] if ver.strip() else ver
+
+
+def _needs_admin(path: str) -> bool:
+    """Prüft ob Schreibrechte auf den Pfad fehlen (typisch in Program Files)."""
+    try:
+        test = os.path.join(path, ".writetest")
+        with open(test, "w") as f:
+            f.write("test")
+        os.remove(test)
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def _copy_files_elevated(pairs: list[tuple[str, str]]) -> bool:
+    """
+    Kopiert mehrere Dateien mit EINER einzigen UAC-Elevation.
+
+    Erzeugt ein temporäres PowerShell-Skript mit allen Copy-Item-Befehlen
+    und startet es elevated (Start-Process -Verb RunAs). Dadurch genügt eine
+    einzige UAC-Abfrage für das gesamte Update – die App selbst muss NICHT
+    als Administrator gestartet werden.
+
+    pairs: Liste von (quelle, ziel). Gibt True zurück, wenn alle Ziele
+    danach existieren. Bei abgelehnter UAC liefert PowerShell != 0 → False.
+    """
+    import tempfile
+
+    # Copy-Befehle in ein Skript schreiben (vermeidet Quoting-Hölle).
+    # ''  = escapter Apostroph in PowerShell-Single-Quote-Strings.
+    script_lines = ["$ErrorActionPreference = 'Stop'"]
+    for src, dest in pairs:
+        s = src.replace("'", "''")
+        d = dest.replace("'", "''")
+        script_lines.append(
+            f"Copy-Item -LiteralPath '{s}' -Destination '{d}' -Force")
+    script = "\r\n".join(script_lines) + "\r\n"
+
+    fd, script_path = tempfile.mkstemp(suffix=".ps1")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(script)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        return False
+
+    try:
+        # Äußere PowerShell startet die innere elevated und wartet auf sie.
+        inner_args = f'-NoProfile -ExecutionPolicy Bypass -File "{script_path}"'
+        result = subprocess.run(
+            [
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                f"$p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru "
+                f"-ArgumentList '{inner_args}'; exit $p.ExitCode"
+            ],
+            capture_output=True, timeout=180,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return result.returncode == 0 and all(os.path.isfile(d) for _, d in pairs)
+    except Exception:
+        return False
+    finally:
+        try:
+            os.remove(script_path)
+        except Exception:
+            pass
+
+
 def show_updater():
     """
     Öffnet den Update-Dialog.
@@ -805,7 +893,7 @@ def show_updater():
                 elif data["local"] == t("upd_not_found"):
                     lbl["sts"].config(text=t("upd_not_found"), fg="orange")
                     any_update = True
-                elif data["local"].split()[0] == data["latest"].split()[0]:
+                elif _normalize_version(data["local"]) == _normalize_version(data["latest"]):
                     lbl["sts"].config(text=t("upd_uptodate"), fg="green")
                     lbl["chk"].config(state="disabled")
                 else:
@@ -836,7 +924,12 @@ def show_updater():
             import tempfile, zipfile
             errors      = []
             do_restart  = False
+            dest_dir    = _app_dir()
+            temp_dir    = os.environ.get("TEMP", dest_dir)
+            copy_pairs  = []   # (quelle_temp, ziel) – am Ende gesammelt kopiert
+            temp_files  = []   # zum Aufräumen
 
+            # ── 1) Herunterladen / nach temp entpacken (ohne Adminrechte) ──
             for key, data in selected.items():
                 url      = data["url"]
                 typ      = data.get("type", "exe")
@@ -844,61 +937,65 @@ def show_updater():
                 dialog.after(0, lambda n=name: status_lbl.config(
                     text=f"{t('upd_downloading')} {n}", fg="gray"))
                 try:
-                    suffix = ".zip" if typ in ("zip_ffmpeg",) else ".exe"
+                    suffix = ".zip" if typ == "zip_ffmpeg" else ".exe"
                     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                         tmp_path = tmp.name
+                    temp_files.append(tmp_path)
 
                     if not _download_to_file(url, tmp_path):
                         errors.append(name)
                         continue
 
-                    dialog.after(0, lambda n=name: status_lbl.config(
-                        text=f"{t('upd_installing')} {n}", fg="gray"))
-
-                    dest_dir = _app_dir()
-
                     if typ == "installer":
                         # App-Update: Installer silent starten, App beendet sich danach
                         do_restart = True
                         installer_path = os.path.join(
-                            os.environ.get("TEMP", dest_dir),
-                            "VideoDownloader_Update.exe"
-                        )
+                            temp_dir, "VideoDownloader_Update.exe")
                         shutil.copy2(tmp_path, installer_path)
 
                     elif typ == "exe":
-                        dest = os.path.join(dest_dir, "yt-dlp.exe")
-                        old  = dest + ".old"
-                        try:
-                            os.replace(dest, old)
-                        except Exception:
-                            pass
-                        try:
-                            shutil.copy2(tmp_path, dest)
-                            if os.path.exists(old):
-                                os.remove(old)
-                        except Exception as ex:
-                            errors.append(f"yt-dlp.exe: {ex}")
+                        copy_pairs.append(
+                            (tmp_path, os.path.join(dest_dir, "yt-dlp.exe")))
 
                     elif typ == "zip_ffmpeg":
-                        try:
-                            with zipfile.ZipFile(tmp_path, "r") as zf:
-                                for member in zf.namelist():
-                                    base = os.path.basename(member)
-                                    if base in ("ffmpeg.exe", "ffprobe.exe"):
-                                        with zf.open(member) as src, \
-                                             open(os.path.join(dest_dir, base), "wb") as dst:
-                                            shutil.copyfileobj(src, dst)
-                        except Exception as ex:
-                            errors.append(f"ffmpeg.exe: {ex}")
-
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
+                        with zipfile.ZipFile(tmp_path, "r") as zf:
+                            for member in zf.namelist():
+                                base = os.path.basename(member)
+                                if base in ("ffmpeg.exe", "ffprobe.exe"):
+                                    tmp_bin = os.path.join(temp_dir, base)
+                                    with zf.open(member) as src, \
+                                         open(tmp_bin, "wb") as dst:
+                                        shutil.copyfileobj(src, dst)
+                                    temp_files.append(tmp_bin)
+                                    copy_pairs.append(
+                                        (tmp_bin, os.path.join(dest_dir, base)))
 
                 except Exception as ex:
                     errors.append(f"{name}: {ex}")
+
+            # ── 2) Dateien an ihren Zielort kopieren ───────────────────────
+            # Liegt das App-Verzeichnis in Program Files o.Ä., werden ALLE
+            # Kopien mit EINER einzigen UAC-Abfrage elevated ausgeführt. Die
+            # App selbst muss dafür nicht als Administrator gestartet werden.
+            if copy_pairs:
+                dialog.after(0, lambda: status_lbl.config(
+                    text=t("upd_installing"), fg="gray"))
+                if _needs_admin(dest_dir):
+                    if not _copy_files_elevated(copy_pairs):
+                        errors.append(t("upd_err_admin"))
+                else:
+                    for src, dest in copy_pairs:
+                        try:
+                            shutil.copy2(src, dest)
+                        except Exception as ex:
+                            errors.append(f"{os.path.basename(dest)}: {ex}")
+
+            # ── 3) Aufräumen ───────────────────────────────────────────────
+            for p in temp_files:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
             def _done():
                 upd_progress.stop()
