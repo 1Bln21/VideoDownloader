@@ -10,7 +10,7 @@
 
 **Einfacher, schneller YouTube/Playlist-Downloader mit schöner GUI für Windows**
 
-Version 1.2.0 (16.04.2026)
+Version 1.2.1 (09.06.2026)
 
 ### Features
 - Lädt einzelne Videos und komplette Playlists
@@ -25,7 +25,7 @@ Version 1.2.0 (16.04.2026)
 
 ### Installation
 1. Lade die neueste Version herunter: [Releases](../../releases)
-2. Führe `VideoDownloader_Setup_1.1.3.exe` aus
+2. Führe `VideoDownloader_Setup_1.x.x.exe` aus
 
 ### Danksagung / Third-Party Software
 Dieses Programm nutzt folgende großartige Open-Source-Projekte:
@@ -49,7 +49,7 @@ Nutze das Tool verantwortungsvoll und nur für Inhalte, an denen du die entsprec
 
 **Simple, fast YouTube/playlist downloader with a clean GUI for Windows**
 
-Version 1.2.0 (04-16-2026)
+Version 1.2.1 (06-09-2026)
 
 ### Features
 - Downloads single videos and complete playlists
@@ -64,7 +64,7 @@ Version 1.2.0 (04-16-2026)
 
 ### Installation
 1. Download the latest release: [Releases](../../releases)
-2. Run `VideoDownloader_Setup_1.1.3.exe`
+2. Run `VideoDownloader_Setup_1.x.x.exe`
 
 ### Credits / Third-Party Software
 This program makes use of the following great open-source projects:
